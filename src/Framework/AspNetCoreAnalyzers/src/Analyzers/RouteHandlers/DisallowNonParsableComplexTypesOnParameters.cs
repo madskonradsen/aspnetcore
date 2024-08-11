@@ -30,7 +30,7 @@ public partial class RouteHandlerAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            var parameterTypeSymbol = ResovleParameterTypeSymbol(handlerDelegateParameter);
+            var parameterTypeSymbol = ResovleParameterTypeSymbol(handlerDelegateParameter, methodSymbol);
 
             // If this is null it means we aren't working with a named type symbol.
             if (parameterTypeSymbol == null)
@@ -113,7 +113,7 @@ public partial class RouteHandlerAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
-        static INamedTypeSymbol? ResovleParameterTypeSymbol(IParameterSymbol parameterSymbol)
+        static INamedTypeSymbol? ResovleParameterTypeSymbol(IParameterSymbol parameterSymbol, IMethodSymbol methodSymbol)
         {
             INamedTypeSymbol? parameterTypeSymbol = null;
 
@@ -126,6 +126,10 @@ public partial class RouteHandlerAnalyzer : DiagnosticAnalyzer
             {
                 parameterTypeSymbol = namedTypeSymbol;
             }
+            else if (parameterSymbol.Type is ITypeParameterSymbol typeParameterSymbol)
+            {
+                parameterTypeSymbol = ResolveTypeParameter(typeParameterSymbol, methodSymbol);
+            }
 
             // If it is nullable, unwrap it.
             if (parameterTypeSymbol!.ConstructedFrom.SpecialType == SpecialType.System_Nullable_T)
@@ -134,6 +138,31 @@ public partial class RouteHandlerAnalyzer : DiagnosticAnalyzer
             }
 
             return parameterTypeSymbol;
+        }
+
+        static INamedTypeSymbol? ResolveTypeParameter(ITypeParameterSymbol typeParameterSymbol, IMethodSymbol methodSymbol)
+        {
+            // Check the method's type parameters
+            var typeArgumentIndex = methodSymbol.TypeParameters.IndexOf(typeParameterSymbol);
+            if (typeArgumentIndex >= 0 && typeArgumentIndex < methodSymbol.TypeArguments.Length)
+            {
+                return methodSymbol.TypeArguments[typeArgumentIndex] as INamedTypeSymbol;
+            }
+
+            // Traverse the containing type hierarchy
+            var containingType = methodSymbol.ContainingType;
+            while (containingType != null)
+            {
+                typeArgumentIndex = containingType.TypeParameters.IndexOf(typeParameterSymbol);
+                if (typeArgumentIndex >= 0 && typeArgumentIndex < containingType.TypeArguments.Length)
+                {
+                    return containingType.TypeArguments[typeArgumentIndex] as INamedTypeSymbol;
+                }
+
+                containingType = containingType.ContainingType;
+            }
+
+            return null;
         }
     }
 }

@@ -739,5 +739,34 @@ public class CommercialCustomer : ICustomer
         // Act
         await VerifyCS.VerifyAnalyzerAsync(source);
     }
+
+    [Fact]
+    public async Task Route_Parameter_withGenerics_Works()
+    {
+        // Arrange
+        var source = $$"""
+using Microsoft.AspNetCore.Builder;
+   
+var builder = WebApplication.CreateBuilder(args);
+   
+var app = builder.Build();
+   
+static void UseEndpoint<TEndpointInput>(WebApplication app) where TEndpointInput : class
+{
+    app.MapPost("/test", (TEndpointInput data) => Results.Ok(data));
+}
+   
+UseEndpoint<DummyEndpointInput>(app);
+   
+app.Run();
+   
+public class DummyEndpointInput
+{
+}
+""";
+
+        // Act
+        await VerifyCS.VerifyAnalyzerAsync(source);
+    }
 }
 
