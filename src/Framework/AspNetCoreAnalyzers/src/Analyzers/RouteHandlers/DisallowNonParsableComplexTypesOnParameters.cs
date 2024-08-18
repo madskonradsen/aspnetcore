@@ -1,6 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System;
 using System.Linq;
 using Microsoft.AspNetCore.Analyzers.Infrastructure;
 using Microsoft.AspNetCore.Analyzers.RouteEmbeddedLanguage.Infrastructure;
@@ -19,7 +20,8 @@ public partial class RouteHandlerAnalyzer : DiagnosticAnalyzer
         in OperationAnalysisContext context,
         WellKnownTypes wellKnownTypes,
         RouteUsageModel routeUsage,
-        IMethodSymbol methodSymbol)
+        IMethodSymbol methodSymbol,
+        SemanticModel semanticModel)
     {
         foreach (var handlerDelegateParameter in methodSymbol.Parameters)
         {
@@ -30,7 +32,7 @@ public partial class RouteHandlerAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            var parameterTypeSymbol = ResovleParameterTypeSymbol(handlerDelegateParameter);
+            var parameterTypeSymbol = ResolveParameterTypeSymbol(handlerDelegateParameter, methodSymbol, semanticModel);
 
             // If this is null it means we aren't working with a named type symbol.
             if (parameterTypeSymbol == null)
@@ -113,7 +115,7 @@ public partial class RouteHandlerAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
-        static INamedTypeSymbol? ResovleParameterTypeSymbol(IParameterSymbol parameterSymbol)
+        static INamedTypeSymbol? ResolveParameterTypeSymbol(IParameterSymbol parameterSymbol, IMethodSymbol methodSymbol, SemanticModel semanticModel)
         {
             INamedTypeSymbol? parameterTypeSymbol = null;
 
@@ -126,6 +128,10 @@ public partial class RouteHandlerAnalyzer : DiagnosticAnalyzer
             {
                 parameterTypeSymbol = namedTypeSymbol;
             }
+            else if (parameterSymbol.Type is ITypeParameterSymbol typeParameterSymbol)
+            {
+                parameterTypeSymbol = ResolveTypeParameter(typeParameterSymbol, methodSymbol, semanticModel);
+            }
 
             // If it is nullable, unwrap it.
             if (parameterTypeSymbol!.ConstructedFrom.SpecialType == SpecialType.System_Nullable_T)
@@ -134,6 +140,53 @@ public partial class RouteHandlerAnalyzer : DiagnosticAnalyzer
             }
 
             return parameterTypeSymbol;
+        }
+
+        static INamedTypeSymbol? ResolveTypeParameter(ITypeParameterSymbol typeParameterSymbol, IMethodSymbol methodSymbol, SemanticModel semanticModel)
+        {
+            var containingMethod = methodSymbol.ContainingSymbol as IMethodSymbol;
+            if (containingMethod != null)
+            {
+                var syntaxTree = containingMethod.DeclaringSyntaxReferences.FirstOrDefault()?.SyntaxTree;
+                if (syntaxTree != null)
+                {
+                    var root = syntaxTree.GetRoot();
+                    var invocation = root.DescendantNodes()
+                        .OfType<InvocationExpressionSyntax>()
+                        .FirstOrDefault(inv => inv.Expression is GenericNameSyntax genericName &&
+                                               genericName.Identifier.Text == containingMethod.Name);
+
+                    if (invocation != null)
+                    {
+                        var genericName = (GenericNameSyntax)invocation.Expression;
+                        var typeArgumentList = genericName.TypeArgumentList.Arguments;
+                        var typeArgumentIndex = containingMethod.TypeParameters.IndexOf(typeParameterSymbol);
+                        if (typeArgumentIndex >= 0 && typeArgumentIndex < typeArgumentList.Count)
+                        {
+                            var typeArgumentSyntax = typeArgumentList[typeArgumentIndex];
+                            var typeInfo = semanticModel.GetTypeInfo(typeArgumentSyntax);
+                            var namedTypeSymbol = typeInfo.Type as INamedTypeSymbol;
+                            if (namedTypeSymbol == null)
+                            {
+                                var parent = invocation.Parent;
+                                while (parent != null && !(parent is InvocationExpressionSyntax))
+                                {
+                                    parent = parent.Parent;
+                                }
+
+                                if (parent is InvocationExpressionSyntax parentInvocation)
+                                {
+                                    return ResolveTypeParameter(typeParameterSymbol, containingMethod, semanticModel);
+                                }
+                            }
+
+                            return namedTypeSymbol;
+                        }
+                    }
+                }
+            }
+
+            return null;
         }
     }
 }

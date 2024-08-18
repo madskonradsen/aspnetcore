@@ -739,5 +739,113 @@ public class CommercialCustomer : ICustomer
         // Act
         await VerifyCS.VerifyAnalyzerAsync(source);
     }
+
+    [Fact]
+    public async Task Route_Parameter_withGenerics_Works()
+    {
+        // Arrange
+        var source = $$"""
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Builder;
+
+var builder = WebApplication.CreateBuilder(args);
+
+var app = builder.Build();
+
+static void UseEndpoint<TEndpointInput>(WebApplication app) where TEndpointInput : class
+{
+    app.MapPost("/test", (TEndpointInput data) => { });
+}
+
+UseEndpoint<DummyEndpointInput>(app);
+
+app.Run();
+
+public class DummyEndpointInput
+{
+}
+""";
+
+        // Act
+        await VerifyCS.VerifyAnalyzerAsync(source);
+    }
+
+    [Fact]
+    public async Task Route_Parameter_withGenericsInMoreComplexSetup_Works()
+    {
+        // Arrange
+        var source = $$"""
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Builder;
+
+var builder = WebApplication.CreateBuilder(args);
+
+var app = builder.Build();
+
+static void UseEndpoint<TFirstEndpointInput, TSecondEndpointInput>(WebApplication app) where TFirstEndpointInput : class where TSecondEndpointInput : class
+{
+   app.MapPost("/test", (TFirstEndpointInput data, TSecondEndpointInput moreData) => { });
+}
+
+static void AddEndpoint<TFirstEndpointInput, TSecondEndpointInput>(WebApplication app) where TFirstEndpointInput : class where TSecondEndpointInput : class
+{
+   UseEndpoint<TFirstEndpointInput, TSecondEndpointInput>(app);
+}
+
+AddEndpoint<FirstDummyEndpointInput, SecondDummyEndpointInput>(app);
+
+app.Run();
+
+public class FirstDummyEndpointInput
+{
+}
+
+public class SecondDummyEndpointInput
+{
+}
+""";
+
+        // Act
+        await VerifyCS.VerifyAnalyzerAsync(source);
+    }
+
+    [Fact]
+    public async Task Route_Parameter_withGenericsInEvenMoreComplexSetup_Works()
+    {
+        // Arrange
+        var source = $$"""
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Builder;
+
+var builder = WebApplication.CreateBuilder(args);
+
+var app = builder.Build();
+
+static void UseEndpoint<TFirstEndpointInput, TSecondEndpointInput>(WebApplication app) where TFirstEndpointInput : class where TSecondEndpointInput : class
+{
+  app.MapPost("/test", (TFirstEndpointInput data, TSecondEndpointInput moreData) => { });
+}
+
+static void AddEndpoint(WebApplication app)
+{
+  UseEndpoint<FirstDummyEndpointInput, SecondDummyEndpointInput>(app);
+}
+
+AddEndpoint(app);
+
+app.Run();
+
+public class FirstDummyEndpointInput
+{
+}
+
+public class SecondDummyEndpointInput
+{
+}
+""";
+
+        // Act
+        await VerifyCS.VerifyAnalyzerAsync(source);
+    }
 }
 
